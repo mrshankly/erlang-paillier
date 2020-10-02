@@ -4,9 +4,6 @@
 
 -on_load(init/0).
 
--define(APPNAME, paillier).
--define(LIBNAME, paillier).
-
 -type key_length() :: non_neg_integer().
 -type public_key() :: {key_length(), binary(), binary(), binary()}.
 -type private_key() :: {key_length(), binary(), binary(), binary(), binary(), binary()}.
@@ -50,7 +47,7 @@ mul_nif(_PublicKey, _A, _B) ->
 
 init() ->
     PrivDir =
-        case code:priv_dir(?APPNAME) of
+        case code:priv_dir(paillier) of
             {error, _} ->
                 EbinDir = filename:dirname(code:which(?MODULE)),
                 AppPath = filename:dirname(EbinDir),
@@ -58,7 +55,7 @@ init() ->
             Path ->
                 Path
         end,
-    erlang:load_nif(filename:join(PrivDir, ?APPNAME), 0).
+    erlang:load_nif(filename:join(PrivDir, paillier), 0).
 
 not_loaded(Line) ->
     erlang:nif_error({not_loaded, [{module, ?MODULE}, {line, Line}]}).

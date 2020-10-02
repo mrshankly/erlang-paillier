@@ -1,0 +1,8 @@
+{application, paillier, [
+    {description, "Paillier encryption scheme"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [kernel, stdlib]},
+    {env, []},
+    {modules, []}
+]}.

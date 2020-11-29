@@ -2,18 +2,21 @@
 
 -export([keypair/1, encrypt/2, decrypt/2, add/3, mul/3]).
 
+-export_type([public_key/0, private_key/0, keypair/0]).
+
 -on_load(init/0).
 
 -type key_length() :: non_neg_integer().
 -type public_key() :: {key_length(), binary(), binary(), binary()}.
 -type private_key() :: {key_length(), binary(), binary(), binary(), binary(), binary()}.
+-type keypair() :: {public_key(), private_key()}.
 
 -type plaintext() :: non_neg_integer().
 -type ciphertext() :: binary().
 
 %% API
 
--spec keypair(key_length()) -> {public_key(), private_key()}.
+-spec keypair(key_length()) -> keypair().
 keypair(_KeyLength) ->
     not_loaded(?LINE).
 

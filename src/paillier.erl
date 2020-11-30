@@ -49,16 +49,7 @@ mul_nif(_PublicKey, _A, _B) ->
     not_loaded(?LINE).
 
 init() ->
-    PrivDir =
-        case code:priv_dir(paillier) of
-            {error, _} ->
-                EbinDir = filename:dirname(code:which(?MODULE)),
-                AppPath = filename:dirname(EbinDir),
-                filename:join(AppPath, "priv");
-            Path ->
-                Path
-        end,
-    erlang:load_nif(filename:join(PrivDir, paillier), 0).
+    erlang:load_nif("priv/paillier", 0).
 
 not_loaded(Line) ->
     erlang:nif_error({not_loaded, [{module, ?MODULE}, {line, Line}]}).

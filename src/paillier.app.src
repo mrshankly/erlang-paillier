@@ -1,8 +1,10 @@
 {application, paillier, [
-    {description, "Paillier encryption scheme"},
-    {vsn, "0.1.0"},
+    {description, "NIF bindings for the libpaillier cryptographic library"},
+    {vsn, "1.0.0"},
+    {env, []},
+    {modules, []},
     {registered, []},
     {applications, [kernel, stdlib]},
-    {env, []},
-    {modules, []}
+    {licenses, ["GPL-2.0-only"]},
+    {links, [{"GitHub", "https://github.com/mrshankly/erlang-paillier"}]}
 ]}.

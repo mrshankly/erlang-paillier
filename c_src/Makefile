@@ -20,17 +20,17 @@ ifeq ($(UNAME_SYS), Darwin)
 	CC ?= cc
 	CFLAGS ?= -O3 -std=c99 -arch x86_64 -finline-functions -Wall -Wextra -Wmissing-prototypes -Wno-unused-parameter
 	CXXFLAGS ?= -O3 -arch x86_64 -finline-functions -Wall -Wextra -Wno-unused-parameter
-	LDFLAGS ?= -arch x86_64 -flat_namespace -undefined suppress -lgmp -lpaillier
+	LDFLAGS ?= -arch x86_64 -flat_namespace -undefined suppress -lgmp
 else ifeq ($(UNAME_SYS), FreeBSD)
 	CC ?= cc
 	CFLAGS ?= -O3 -std=c99 -finline-functions -Wall -Wextra -Wmissing-prototypes -Wno-unused-parameter
 	CXXFLAGS ?= -O3 -finline-functions -Wall -Wextra -Wno-unused-parameter
-	LDFLAGS ?= -lgmp -lpaillier
+	LDFLAGS ?= -lgmp
 else ifeq ($(UNAME_SYS), Linux)
 	CC ?= gcc
 	CFLAGS ?= -O3 -std=c99 -finline-functions -Wall -Wextra -Wmissing-prototypes -Wno-unused-parameter
 	CXXFLAGS ?= -O3 -finline-functions -Wall -Wextra -Wno-unused-parameter
-	LDFLAGS ?= -lgmp -lpaillier
+	LDFLAGS ?= -lgmp
 endif
 
 CFLAGS += -fPIC -I $(ERTS_INCLUDE_DIR) -I $(ERL_INTERFACE_INCLUDE_DIR)

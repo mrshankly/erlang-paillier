@@ -1,197 +1,414 @@
-#include <erl_nif.h>
+/*
+	libpaillier - A library implementing the Paillier cryptosystem.
+
+	Copyright (C) 2006 SRI International.
+
+	This program is free software; you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation; either version 2 of the License, or
+	(at your option) any later version.
+
+	This program is distributed in the hope that it will be useful, but
+	WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+	General Public License for more details.
+*/
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <gmp.h>
-#include <paillier.h>
+#include "paillier.h"
 
-#include "util.h"
+static void
+init_rand( gmp_randstate_t rand, paillier_get_rand_t get_rand, unsigned int bytes )
+{
+	void* buf;
+	mpz_t s;
 
-static int get_public_key(ErlNifEnv *env, ERL_NIF_TERM term, paillier_pubkey_t *pub) {
-    int arity;
-    const ERL_NIF_TERM *tuple;
+	buf = malloc(bytes);
+	get_rand(buf, bytes);
 
-    if (!enif_get_tuple(env, term, &arity, &tuple) || arity != 4) {
-        return 0;
-    }
+	gmp_randinit_default(rand);
+	mpz_init(s);
+	mpz_import(s, bytes, 1, 1, 0, 0, buf);
+	gmp_randseed(rand, s);
+	mpz_clear(s);
 
-    return enif_get_int(env, tuple[0], &pub->bits)   &&
-           get_bigint(env, tuple[1], pub->n)         &&
-           get_bigint(env, tuple[2], pub->n_plusone) &&
-           get_bigint(env, tuple[3], pub->n_squared);
+	free(buf);
 }
 
-static int get_keypair(ErlNifEnv *env, ERL_NIF_TERM term, paillier_pubkey_t *pub, paillier_prvkey_t *prv) {
-    int arity;
-    const ERL_NIF_TERM *tuple;
-
-    if (!enif_get_tuple(env, term, &arity, &tuple) || arity != 6) {
-        return 0;
-    }
-
-    return enif_get_int(env, tuple[0], &pub->bits)   &&
-           get_bigint(env, tuple[1], pub->n)         &&
-           get_bigint(env, tuple[2], pub->n_plusone) &&
-           get_bigint(env, tuple[3], pub->n_squared) &&
-           get_bigint(env, tuple[4], prv->lambda)    &&
-           get_bigint(env, tuple[5], prv->x);
+static void
+complete_pubkey( paillier_pubkey_t* pub )
+{
+	mpz_mul(pub->n_squared, pub->n, pub->n);
+	mpz_add_ui(pub->n_plusone, pub->n, 1);
 }
 
-static ERL_NIF_TERM make_keypair(ErlNifEnv *env, paillier_pubkey_t *pub, paillier_prvkey_t *prv) {
-    ERL_NIF_TERM key_length = enif_make_int(env, pub->bits);
-
-    ERL_NIF_TERM n = make_binary(env, pub->n);
-    ERL_NIF_TERM g = make_binary(env, pub->n_plusone);
-    ERL_NIF_TERM n2 = make_binary(env, pub->n_squared);
-
-    ERL_NIF_TERM lambda = make_binary(env, prv->lambda);
-    ERL_NIF_TERM mu = make_binary(env, prv->x);
-
-    ERL_NIF_TERM public = enif_make_tuple4(env, key_length, n, g, n2);
-    ERL_NIF_TERM private = enif_make_tuple6(env, key_length, n, g, n2, lambda, mu);
-
-    return enif_make_tuple2(env, public, private);
+static void
+complete_prvkey( paillier_prvkey_t* prv, paillier_pubkey_t* pub )
+{
+	mpz_powm(prv->x, pub->n_plusone, prv->lambda, pub->n_squared);
+	mpz_sub_ui(prv->x, prv->x, 1);
+	mpz_div(prv->x, prv->x, pub->n);
+	mpz_invert(prv->x, prv->x, pub->n);
 }
 
-static ERL_NIF_TERM keypair(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
-    int key_length;
-    paillier_pubkey_t *pub;
-    paillier_prvkey_t *prv;
+void
+paillier_keygen( unsigned int modulusbits,
+								 paillier_pubkey_t** pub,
+								 paillier_prvkey_t** prv,
+								 paillier_get_rand_t get_rand )
+{
+	mpz_t p;
+	mpz_t q;
+	gmp_randstate_t rand;
 
-    if (argc != 1 || !enif_get_int(env, argv[0], &key_length) || key_length <= 0) {
-        return enif_make_badarg(env);
-    }
+	/* allocate the new key structures */
 
-    paillier_keygen(key_length, &pub, &prv, paillier_get_rand_devurandom);
-    ERL_NIF_TERM keypair = make_keypair(env, pub, prv);
-    paillier_freepubkey(pub);
-    paillier_freeprvkey(prv);
+	*pub = (paillier_pubkey_t*) malloc(sizeof(paillier_pubkey_t));
+	*prv = (paillier_prvkey_t*) malloc(sizeof(paillier_prvkey_t));
 
-    return keypair;
+	/* initialize our integers */
+
+	mpz_init((*pub)->n);
+	mpz_init((*pub)->n_squared);
+	mpz_init((*pub)->n_plusone);
+	mpz_init((*prv)->lambda);
+	mpz_init((*prv)->x);
+	mpz_init(p);
+	mpz_init(q);
+
+	/* pick random (modulusbits/2)-bit primes p and q */
+
+	init_rand(rand, get_rand, modulusbits / 8 + 1);
+	do
+	{
+		do
+			mpz_urandomb(p, rand, modulusbits / 2);
+		while( !mpz_probab_prime_p(p, 10) );
+
+		do
+			mpz_urandomb(q, rand, modulusbits / 2);
+		while( !mpz_probab_prime_p(q, 10) );
+
+		/* compute the public modulus n = p q */
+
+		mpz_mul((*pub)->n, p, q);
+	} while( !mpz_tstbit((*pub)->n, modulusbits - 1) );
+	complete_pubkey(*pub);
+	(*pub)->bits = modulusbits;
+
+	/* compute the private key lambda = lcm(p-1,q-1) */
+
+	mpz_sub_ui(p, p, 1);
+	mpz_sub_ui(q, q, 1);
+	mpz_lcm((*prv)->lambda, p, q);
+	complete_prvkey(*prv, *pub);
+
+	/* clear temporary integers and randstate */
+
+	mpz_clear(p);
+	mpz_clear(q);
+  gmp_randclear(rand);
 }
 
-static ERL_NIF_TERM encrypt_nif(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
-    paillier_pubkey_t pub;
-    paillier_plaintext_t plaintext;
-    paillier_ciphertext_t ciphertext;
+paillier_ciphertext_t*
+paillier_enc( paillier_ciphertext_t* res,
+							paillier_pubkey_t* pub,
+							paillier_plaintext_t* pt,
+							paillier_get_rand_t get_rand )
+{
+	mpz_t r;
+	gmp_randstate_t rand;
+	mpz_t x;
 
-    mpz_init(pub.n);
-    mpz_init(pub.n_plusone);
-    mpz_init(pub.n_squared);
-    mpz_init(plaintext.m);
-    mpz_init(ciphertext.c);
+	/* pick random blinding factor */
 
-    if (argc != 2 || !get_public_key(env, argv[0], &pub) || !get_bigint(env, argv[1], plaintext.m)) {
-        enif_make_badarg(env);
-    }
+	mpz_init(r);
+ 	init_rand(rand, get_rand, pub->bits / 8 + 1);
+	do
+		mpz_urandomb(r, rand, pub->bits);
+	while( mpz_cmp(r, pub->n) >= 0 );
 
-    paillier_enc(&ciphertext, &pub, &plaintext, paillier_get_rand_devurandom);
-    mpz_clear(pub.n);
-    mpz_clear(pub.n_plusone);
-    mpz_clear(pub.n_squared);
-    mpz_clear(plaintext.m);
+	/* compute ciphertext */
+	
+	if( !res )
+	{
+		res = (paillier_ciphertext_t*) malloc(sizeof(paillier_ciphertext_t));
+		mpz_init(res->c);
+	}
 
-    ERL_NIF_TERM result_term = make_binary(env, ciphertext.c);
-    mpz_clear(ciphertext.c);
-    return result_term;
+	mpz_init(x);
+	mpz_powm(res->c, pub->n_plusone, pt->m, pub->n_squared);
+	mpz_powm(x, r, pub->n, pub->n_squared);
+
+	mpz_mul(res->c, res->c, x);
+	mpz_mod(res->c, res->c, pub->n_squared);
+
+	mpz_clear(x);
+	mpz_clear(r);
+  gmp_randclear(rand);
+
+	return res;
 }
 
-static ERL_NIF_TERM decrypt_nif(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
-    paillier_pubkey_t pub;
-    paillier_prvkey_t prv;
-    paillier_plaintext_t plaintext;
-    paillier_ciphertext_t ciphertext;
+paillier_plaintext_t*
+paillier_dec( paillier_plaintext_t* res,
+							paillier_pubkey_t* pub,
+							paillier_prvkey_t* prv,
+							paillier_ciphertext_t* ct )
+{
+	if( !res )
+	{
+		res = (paillier_plaintext_t*) malloc(sizeof(paillier_plaintext_t));
+		mpz_init(res->m);
+	}
 
-    mpz_init(pub.n);
-    mpz_init(pub.n_plusone);
-    mpz_init(pub.n_squared);
-    mpz_init(prv.lambda);
-    mpz_init(prv.x);
-    mpz_init(plaintext.m);
-    mpz_init(ciphertext.c);
+	mpz_powm(res->m, ct->c, prv->lambda, pub->n_squared);
+	mpz_sub_ui(res->m, res->m, 1);
+	mpz_div(res->m, res->m, pub->n);
+	mpz_mul(res->m, res->m, prv->x);
+	mpz_mod(res->m, res->m, pub->n);
 
-    if (argc != 2 || !get_keypair(env, argv[0], &pub, &prv) || !get_bigint(env, argv[1], ciphertext.c)) {
-        enif_make_badarg(env);
-    }
-
-    paillier_dec(&plaintext, &pub, &prv, &ciphertext);
-    mpz_clear(pub.n);
-    mpz_clear(pub.n_plusone);
-    mpz_clear(pub.n_squared);
-    mpz_clear(prv.lambda);
-    mpz_clear(prv.x);
-    mpz_clear(ciphertext.c);
-
-    ERL_NIF_TERM result_term = make_binary(env, plaintext.m);
-    mpz_clear(plaintext.m);
-    return result_term;
+	return res;
 }
 
-static ERL_NIF_TERM add(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
-    mpz_t a, b, n2, result;
-
-    mpz_init(a);
-    mpz_init(b);
-    mpz_init(n2);
-    mpz_init(result);
-
-    if (argc != 3) {
-        return enif_make_badarg(env);
-    }
-    ERL_NIF_TERM n2_term = get_tuple_elem(env, argv[0], 3);
-    if (!get_bigint(env, n2_term, n2) || !get_bigint(env, argv[1], a) || !get_bigint(env, argv[2], b)) {
-        return enif_make_badarg(env);
-    }
-
-    mpz_mul(result, a, b);
-    mpz_mod(result, result, n2);
-    mpz_clear(a);
-    mpz_clear(b);
-    mpz_clear(n2);
-
-    ERL_NIF_TERM result_term = make_binary(env, result);
-    mpz_clear(result);
-    return result_term;
+void
+paillier_mul( paillier_pubkey_t* pub,
+						 	paillier_ciphertext_t* res,
+						 	paillier_ciphertext_t* ct0,
+						 	paillier_ciphertext_t* ct1 )
+{
+	mpz_mul(res->c, ct0->c, ct1->c);
+	mpz_mod(res->c, res->c, pub->n_squared);
 }
 
-static ERL_NIF_TERM mul_nif(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
-    mpz_t a, b, n2, result;
-
-    mpz_init(a);
-    mpz_init(b);
-    mpz_init(n2);
-    mpz_init(result);
-
-    if (argc != 3) {
-        return enif_make_badarg(env);
-    }
-
-    ERL_NIF_TERM n2_term = get_tuple_elem(env, argv[0], 3);
-    if (!get_bigint(env, n2_term, n2) || !get_bigint(env, argv[1], a) || !get_bigint(env, argv[2], b)) {
-        return enif_make_badarg(env);
-    }
-
-    mpz_powm(result, a, b, n2);
-    mpz_clear(a);
-    mpz_clear(b);
-    mpz_clear(n2);
-
-    ERL_NIF_TERM result_term = make_binary(env, result);
-    mpz_clear(result);
-    return result_term;
+void
+paillier_exp( paillier_pubkey_t* pub,
+							paillier_ciphertext_t* res,
+							paillier_ciphertext_t* ct,
+							paillier_plaintext_t* pt )
+{
+	mpz_powm(res->c, ct->c, pt->m, pub->n_squared);
 }
 
-// Initialization.
-
-static ErlNifFunc nif_functions[] = {
-    { .name = "keypair"    , .arity = 1, .fptr = keypair    , .flags = 0 },
-    { .name = "encrypt_nif", .arity = 2, .fptr = encrypt_nif, .flags = 0 },
-    { .name = "decrypt_nif", .arity = 2, .fptr = decrypt_nif, .flags = 0 },
-    { .name = "add"        , .arity = 3, .fptr = add        , .flags = 0 },
-    { .name = "mul_nif"    , .arity = 3, .fptr = mul_nif    , .flags = 0 },
-};
-
-static int load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info) {
-    // Make GMP use erlang's NIF memory functions.
-    mp_set_memory_functions(paillier_alloc, paillier_realloc, paillier_free);
-    return 0;
+paillier_plaintext_t*
+paillier_plaintext_from_ui( unsigned long int x )
+{
+	paillier_plaintext_t* pt;
+	
+	pt = (paillier_plaintext_t*) malloc(sizeof(paillier_plaintext_t));
+	mpz_init_set_ui(pt->m, x);
+	
+	return pt;
 }
 
-ERL_NIF_INIT(paillier, nif_functions, load, NULL, NULL, NULL);
+paillier_plaintext_t*
+paillier_plaintext_from_bytes( void* m, unsigned int len )
+{
+	paillier_plaintext_t* pt;
+
+	pt = (paillier_plaintext_t*) malloc(sizeof(paillier_plaintext_t));
+	mpz_init(pt->m);
+	mpz_import(pt->m, len, 1, 1, 0, 0, m);
+
+	return pt;
+}
+
+void*
+paillier_plaintext_to_bytes( unsigned int len,
+														 paillier_plaintext_t* pt )
+{
+	void* buf0;
+	void* buf1;
+	size_t written;
+
+	buf0 = mpz_export(0, &written, 1, 1, 0, 0, pt->m);
+
+ 	if( written == len )
+ 		return buf0;
+
+	buf1 = malloc(len);
+	memset(buf1, 0, len);
+
+	if( written == 0 )
+		/* no need to copy anything, pt->m = 0 and buf0 was not allocated */
+		return buf1;
+	else if( written < len )
+		/* pad with leading zeros */
+		memcpy(buf1 + (len - written), buf0, written);
+	else
+		/* truncate leading garbage */
+		memcpy(buf1, buf0 + (written - len), len);
+
+	free(buf0);
+
+	return buf1;
+}
+
+paillier_plaintext_t*
+paillier_plaintext_from_str( char* str )
+{
+	return paillier_plaintext_from_bytes(str, strlen(str));
+}
+
+char*
+paillier_plaintext_to_str( paillier_plaintext_t* pt )
+{
+	char* buf;
+	size_t len;
+
+	buf = (char*) mpz_export(0, &len, 1, 1, 0, 0, pt->m);
+	buf = (char*) realloc(buf, len + 1);
+	buf[len] = 0;
+
+	return buf;
+}
+
+paillier_ciphertext_t*
+paillier_ciphertext_from_bytes( void* c, unsigned int len )
+{
+	paillier_ciphertext_t* ct;
+
+	ct = (paillier_ciphertext_t*) malloc(sizeof(paillier_ciphertext_t));
+	mpz_init(ct->c);
+	mpz_import(ct->c, len, 1, 1, 0, 0, c);
+
+	return ct;
+}
+
+void* 
+paillier_ciphertext_to_bytes( unsigned int len,
+															paillier_ciphertext_t* ct )
+{
+	void* buf;
+	int cur_len;
+
+	cur_len = mpz_sizeinbase(ct->c, 2);
+	cur_len = PAILLIER_BITS_TO_BYTES(cur_len);
+	buf = malloc(len);
+	memset(buf, 0, len);
+	mpz_export(buf + (len - cur_len), 0, 1, 1, 0, 0, ct->c);
+
+	return buf;
+}
+
+char*
+paillier_pubkey_to_hex( paillier_pubkey_t* pub )
+{
+	return mpz_get_str(0, 16, pub->n);
+}
+
+char*
+paillier_prvkey_to_hex( paillier_prvkey_t* prv )
+{
+	return mpz_get_str(0, 16, prv->lambda);
+}
+
+paillier_pubkey_t*
+paillier_pubkey_from_hex( char* str )
+{
+	paillier_pubkey_t* pub;
+
+	pub = (paillier_pubkey_t*) malloc(sizeof(paillier_pubkey_t));
+	mpz_init_set_str(pub->n, str, 16);
+	pub->bits = mpz_sizeinbase(pub->n, 2);
+	mpz_init(pub->n_squared);
+	mpz_init(pub->n_plusone);
+	complete_pubkey(pub);
+
+	return pub;
+}
+
+paillier_prvkey_t*
+paillier_prvkey_from_hex( char* str, paillier_pubkey_t* pub )
+{
+	paillier_prvkey_t* prv;
+
+	prv = (paillier_prvkey_t*) malloc(sizeof(paillier_prvkey_t));
+	mpz_init_set_str(prv->lambda, str, 16);
+	mpz_init(prv->x);
+	complete_prvkey(prv, pub);
+
+	return prv;
+}
+
+void
+paillier_freepubkey( paillier_pubkey_t* pub )
+{
+	mpz_clear(pub->n);
+	mpz_clear(pub->n_squared);
+	mpz_clear(pub->n_plusone);
+	free(pub);
+}
+
+void
+paillier_freeprvkey( paillier_prvkey_t* prv )
+{
+	mpz_clear(prv->lambda);
+	mpz_clear(prv->x);
+	free(prv);
+}
+
+void
+paillier_freeplaintext( paillier_plaintext_t* pt )
+{
+	mpz_clear(pt->m);
+	free(pt);
+}
+
+void
+paillier_freeciphertext( paillier_ciphertext_t* ct )
+{
+	mpz_clear(ct->c);
+	free(ct);
+}
+
+static void
+paillier_get_rand_file( void* buf, int len, char* file )
+{
+	FILE* fp;
+	void* p;
+
+	fp = fopen(file, "r");
+
+	p = buf;
+	while( len )
+	{
+		size_t s;
+		s = fread(p, 1, len, fp);
+		p += s;
+		len -= s;
+	}
+
+	fclose(fp);
+}
+
+void
+paillier_get_rand_devrandom( void* buf, int len )
+{
+	paillier_get_rand_file(buf, len, "/dev/random");
+}
+
+void
+paillier_get_rand_devurandom( void* buf, int len )
+{
+	paillier_get_rand_file(buf, len, "/dev/urandom");
+}
+
+paillier_ciphertext_t* 
+paillier_create_enc_zero(void)
+{
+	paillier_ciphertext_t* ct;
+
+	/* make a NON-RERANDOMIZED encryption of zero for the purposes of
+		 homomorphic computation */
+
+	/* note that this is just the number 1 */
+
+	ct = (paillier_ciphertext_t*) malloc(sizeof(paillier_ciphertext_t));
+	mpz_init_set_ui(ct->c, 1);
+
+	return ct;
+}

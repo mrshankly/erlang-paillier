@@ -57,7 +57,7 @@ decrypt(PrivateKey, Ciphertext) ->
     binary:decode_unsigned(Result).
 
 %% @doc Performs the addition of two ciphertexts.
-%% 
+%%
 %% Performs the homomorphic addition of the ciphertexts `A' and `B'. Returns
 %% a ciphertext that will decrypt to the sum of the plaintext value of `A'
 %% and `B'.
@@ -67,7 +67,7 @@ add(_PublicKey, _A, _B) ->
     not_loaded(?LINE).
 
 %% @doc Multiplies a ciphertext by a plaintext.
-%% 
+%%
 %% Performs the homomorphic multiplication of the ciphertext `A' by the
 %% plaintext `B'. Returns a ciphertext that will decrypt to the product of the
 %% plaintext value of `A' by `B'.

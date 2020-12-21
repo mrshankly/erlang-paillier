@@ -18,3 +18,7 @@ _build
 rebar3.crashdump
 *~
 priv
+doc/edoc-info
+doc/*.html
+doc/*.png
+doc/*.css

@@ -1,3 +1,7 @@
+%%% @doc Module paillier implements NIF bindings to the
+%%% <a href="http://hms.isi.jhu.edu/acsc/libpaillier/"><tt>libpaillier</tt></a>
+%%% cryptographic library.
+%%% @end.
 -module(paillier).
 
 -ifdef(TEST).
@@ -18,30 +22,63 @@
 -type plaintext() :: non_neg_integer().
 -type ciphertext() :: binary().
 
-%% API
+%%% ===========================================================================
+%%% API
+%%% ===========================================================================
 
+%% @doc Generates a new public/private keypair.
+%%
+%% Generates and returns a new key pair of length `KeyLength' for the Paillier
+%% encryption scheme. The return value is a two element tuple, where the first
+%% element represents the public key, and the second element represents the
+%% private key.
+%% @end.
 -spec keypair(key_length()) -> keypair().
 keypair(_KeyLength) ->
     not_loaded(?LINE).
 
+%% @doc Encrypts a number.
+%%
+%% Encrypts the number `Plaintext` using the public key `PublicKey'. Returns
+%% the ciphertext in binary form.
+%% @end.
 -spec encrypt(public_key(), plaintext()) -> ciphertext().
 encrypt(PublicKey, Plaintext) when Plaintext >= 0 ->
     encrypt_nif(PublicKey, binary:encode_unsigned(Plaintext)).
 
--spec decrypt(public_key(), ciphertext()) -> plaintext().
+%% @doc Decrypts a ciphertext into a number.
+%%
+%% Decrypts `Ciphertext' using the private key `PrivateKey'. Returns the
+%% plaintext number.
+%% @end.
+-spec decrypt(private_key(), ciphertext()) -> plaintext().
 decrypt(PrivateKey, Ciphertext) ->
     Result = decrypt_nif(PrivateKey, Ciphertext),
     binary:decode_unsigned(Result).
 
+%% @doc Performs the addition of two ciphertexts.
+%% 
+%% Performs the homomorphic addition of the ciphertexts `A' and `B'. Returns
+%% a ciphertext that will decrypt to the sum of the plaintext value of `A'
+%% and `B'.
+%% @end.
 -spec add(public_key(), ciphertext(), ciphertext()) -> ciphertext().
 add(_PublicKey, _A, _B) ->
     not_loaded(?LINE).
 
+%% @doc Multiplies a ciphertext by a plaintext.
+%% 
+%% Performs the homomorphic multiplication of the ciphertext `A' by the
+%% plaintext `B'. Returns a ciphertext that will decrypt to the product of the
+%% plaintext value of `A' by `B'.
+%% @end.
 -spec mul(public_key(), ciphertext(), plaintext()) -> ciphertext().
 mul(PublicKey, A, B) when B >= 0 ->
     mul_nif(PublicKey, A, binary:encode_unsigned(B)).
 
-%% Internal functions.
+%%% ===========================================================================
+%%% Internal functions
+%%% ===========================================================================
 
 encrypt_nif(_PublicKey, _Binary) ->
     not_loaded(?LINE).

@@ -14,14 +14,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-
     - name: Install GMP
       run: sudo apt-get install -y libgmp-dev
-
     - name: Set up Erlang
       uses: gleam-lang/setup-erlang@v1.1.0
       with:
         otp-version: '${{matrix.otp}}'
-    
     - name: Build
       run: rebar3 compile
+    - name: Test
+      run: rebar3 eunit

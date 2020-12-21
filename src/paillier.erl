@@ -1,5 +1,9 @@
 -module(paillier).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -export([keypair/1, encrypt/2, decrypt/2, add/3, mul/3]).
 
 -export_type([public_key/0, private_key/0, keypair/0]).
@@ -62,3 +66,43 @@ init() ->
 
 not_loaded(Line) ->
     erlang:nif_error({not_loaded, [{module, ?MODULE}, {line, Line}]}).
+
+-ifdef(TEST).
+
+encryption_decryption_test() ->
+    {PublicKey, PrivateKey} = keypair(2048),
+
+    Ciphertext = encrypt(PublicKey, 10),
+    Plaintext = decrypt(PrivateKey, Ciphertext),
+    ?assertEqual(10, Plaintext).
+
+randomness_test() ->
+    {PublicKey, PrivateKey} = keypair(2048),
+
+    CiphertextOne = encrypt(PublicKey, 5),
+    CiphertextTwo = encrypt(PublicKey, 5),
+    ?assertNotEqual(CiphertextOne, CiphertextTwo),
+
+    PlaintextOne = decrypt(PrivateKey, CiphertextOne),
+    PlaintextTwo = decrypt(PrivateKey, CiphertextTwo),
+    ?assertEqual(5, PlaintextOne),
+    ?assertEqual(5, PlaintextTwo).
+
+addition_test() ->
+    {PublicKey, PrivateKey} = keypair(2048),
+
+    Ten = encrypt(PublicKey, 10),
+    Two = encrypt(PublicKey, 2),
+    ResultCiphertext = add(PublicKey, Ten, Two),
+    Result = decrypt(PrivateKey, ResultCiphertext),
+    ?assertEqual(12, Result).
+
+multiplication_test() ->
+    {PublicKey, PrivateKey} = keypair(2048),
+
+    Two = encrypt(PublicKey, 2),
+    ResultCiphertext = mul(PublicKey, Two, 21),
+    Result = decrypt(PrivateKey, ResultCiphertext),
+    ?assertEqual(42, Result).
+
+-endif.
